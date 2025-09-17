@@ -1,0 +1,24 @@
+{
+  "name": "e2e-demo-backend",
+  "version": "0.1.0",
+  "description": "Tiny Node.js backend for end-to-end-devops-demo project",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test:smoke": "bash -c 'curl -fsS http://localhost:3000/health | grep -q OK'",
+    "test:metrics": "bash -c 'curl -fsS http://localhost:3000/metrics | grep -q app_requests_total'",
+    "test": "npm run test:smoke && npm run test:metrics"
+  },
+  "keywords": [
+    "backend",
+    "nodejs",
+    "devops",
+    "demo"
+  ],
+  "author": "Adrian-Mihai-Marghidan",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
+}
