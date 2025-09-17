@@ -6,8 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "test:unit": "node --test ./test/*.test.js",
     "test:smoke": "bash -c 'curl -fsS http://localhost:3000/health | grep -q OK'",
     "test:metrics": "bash -c 'curl -fsS http://localhost:3000/metrics | grep -q app_requests_total'",
+    "test:int": "npm run test:smoke && npm run test:metrics",
     "test": "npm run test:smoke && npm run test:metrics"
   },
   "keywords": [
