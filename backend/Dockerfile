@@ -11,7 +11,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev || npm install --omit=dev
 
 # Copy the app code
-COPY server.js .
+COPY . .
 
 # Document the port
 EXPOSE 3000
