@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>E2E Demo Frontend</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 40px auto; }
+    code { background: #f4f4f4; padding: 2px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>End-to-End DevOps Demo</h1>
+  <p>Status: <span id="status">checking…</span></p>
+
+  <script>
+    // Call backend through NGINX proxy (we’ll map /api → backend)
+    fetch('/api/health')
+      .then(r => r.text())
+      .then(t => document.getElementById('status').textContent = t.trim())
+      .catch(err => document.getElementById('status').textContent = 'ERROR');
+  </script>
+</body>
+</html>
