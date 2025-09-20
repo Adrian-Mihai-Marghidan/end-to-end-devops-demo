@@ -15,18 +15,28 @@
     .hidden { display:none; }
     .ok { color: #1a7f37; font-weight: 600; }
     .err { color: #b91c1c; font-weight: 600; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    button { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; background: #f8f8f8; }
+    button:hover { background: #f0f0f0; }
   </style>
 </head>
 <body>
   <h1>End-to-End DevOps Demo</h1>
 
-  <div class="row" aria-live="polite">
+  <!-- Health status -->
+  <div class="row" aria-live="polite" style="margin-bottom:16px;">
     <span id="spinner" class="spinner" aria-hidden="true"></span>
     <span>Status: <span id="status">Checking backend…</span></span>
   </div>
 
+  <!-- Metrics: click-only -->
+  <div style="margin-top:24px;">
+    <button id="btnMetrics" type="button">Fetch metrics</button>
+    <div id="metricsResult" class="mono" style="margin-top:10px;"></div>
+  </div>
+
   <script>
-    // Call backend through NGINX proxy (relative path → same origin http://localhost:8081)
+    // --- Health check: shows spinner ~5s (backend delay), then OK/ERROR ---
     fetch('/api/health')
       .then(r => r.text())
       .then(text => {
@@ -41,6 +51,29 @@
         s.textContent = 'ERROR';
         s.classList.add('err');
       });
+
+    // --- Click-only metrics fetch ---
+    async function fetchMetrics() {
+      const out = document.getElementById('metricsResult');
+      out.textContent = 'Loading...';
+      try {
+        const resp = await fetch('/api/metrics');
+        const text = await resp.text();
+
+        // Extract "app_requests_total <number>" from Prometheus exposition text.
+        const m = text.match(/^\s*app_requests_total\s+(\d+)\s*$/m);
+        if (m) {
+          out.textContent = `app_requests_total = ${m[1]}`;
+        } else {
+          // If format changes, just show raw payload for visibility.
+          out.textContent = text.trim();
+        }
+      } catch (e) {
+        out.textContent = 'ERROR fetching metrics';
+      }
+    }
+
+    document.getElementById('btnMetrics').addEventListener('click', fetchMetrics);
   </script>
 </body>
 </html>
