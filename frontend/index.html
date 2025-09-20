@@ -5,20 +5,42 @@
   <title>E2E Demo Frontend</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 40px auto; }
-    code { background: #f4f4f4; padding: 2px 4px; border-radius: 4px; }
+    body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 40px auto; line-height: 1.5; }
+    .row { display:flex; align-items:center; gap:10px; }
+    .spinner {
+      width: 16px; height: 16px; border: 2px solid #ccc; border-top-color: #333;
+      border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display:none; }
+    .ok { color: #1a7f37; font-weight: 600; }
+    .err { color: #b91c1c; font-weight: 600; }
   </style>
 </head>
 <body>
   <h1>End-to-End DevOps Demo</h1>
-  <p>Status: <span id="status">checking…</span></p>
+
+  <div class="row" aria-live="polite">
+    <span id="spinner" class="spinner" aria-hidden="true"></span>
+    <span>Status: <span id="status">Checking backend…</span></span>
+  </div>
 
   <script>
-    // Call backend through NGINX proxy (we’ll map /api → backend)
+    // Call backend through NGINX proxy (relative path → same origin http://localhost:8081)
     fetch('/api/health')
       .then(r => r.text())
-      .then(t => document.getElementById('status').textContent = t.trim())
-      .catch(err => document.getElementById('status').textContent = 'ERROR');
+      .then(text => {
+        document.getElementById('spinner').classList.add('hidden');
+        const s = document.getElementById('status');
+        s.textContent = text.trim();
+        s.classList.add('ok');
+      })
+      .catch(() => {
+        document.getElementById('spinner').classList.add('hidden');
+        const s = document.getElementById('status');
+        s.textContent = 'ERROR';
+        s.classList.add('err');
+      });
   </script>
 </body>
 </html>

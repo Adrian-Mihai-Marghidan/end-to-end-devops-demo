@@ -5,11 +5,20 @@ let hits = 0;                   // counter for Prometheus
 
 // This is our request handler logic
 function handler(req, res) {
+
+  // Health check endpoint
   if (req.url === '/health') {
-    res.writeHead(200, {'Content-Type':'text/plain; charset=utf-8'});
-    return res.end('OK\n');
+    res.writeHead(200, {'Content-Type':'text/plain'});
+
+    // Add a 5 second delay before sending OK
+    setTimeout(() => {
+      res.end('OK\n');
+    }, 5000);
+
+    return;
   }
 
+  // Metrics endpoint for Prometheus
   if (req.url === '/metrics') {
     hits++;
     res.writeHead(200, {'Content-Type':'text/plain; charset=utf-8'});
