@@ -22,14 +22,34 @@ const pool = new Pool({
   database: DB_NAME,
 });
 
+// tiny helper to pause
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Wait until the DB accepts connections (first boot can take a few seconds)
+async function waitForDb(retries = 30, delayMs = 500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await pool.query('SELECT 1;');
+      return;
+    } catch {
+      await sleep(delayMs);
+    }
+  }
+  throw new Error('DB not ready after retries');
+}
+
 // Prepare the database on startup
 async function initDb() {
+  // Ensure the DB is ready to accept queries
+  await waitForDb();
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS hit_counter (
       id SERIAL PRIMARY KEY,
       total BIGINT NOT NULL DEFAULT 0
     );
   `);
+
   const { rows } = await pool.query('SELECT total FROM hit_counter LIMIT 1;');
   if (rows.length === 0) {
     await pool.query('INSERT INTO hit_counter (total) VALUES (0);');
@@ -38,8 +58,15 @@ async function initDb() {
 
 // Helper: increment and read the DB-backed counter
 async function incrementAndGet() {
-  await pool.query('UPDATE hit_counter SET total = total + 1 WHERE id = (SELECT id FROM hit_counter LIMIT 1);');
-  const { rows } = await pool.query('SELECT total FROM hit_counter LIMIT 1;');
+  // Make sure there is at least one row; if not, create it (defensive)
+  await pool.query(`
+    INSERT INTO hit_counter (id, total)
+    VALUES (1, 0)
+    ON CONFLICT (id) DO NOTHING;
+  `);
+
+  await pool.query('UPDATE hit_counter SET total = total + 1 WHERE id = 1;');
+  const { rows } = await pool.query('SELECT total FROM hit_counter WHERE id = 1;');
   return rows[0].total;
 }
 
@@ -73,14 +100,14 @@ function handler(req, res) {
     );
   }
 
-  // New: DB-backed counter endpoint
+  // DB-backed counter endpoint
   if (path === '/hits') {
     incrementAndGet()
-      .then(total => {
+      .then((total) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ total }));
       })
-      .catch(err => {
+      .catch((err) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'DB_ERROR', detail: err.message }));
       });
@@ -109,7 +136,7 @@ if (require.main === module) {
       process.on('SIGTERM', shutdown);
       process.on('SIGINT', shutdown);
     })
-    .catch(err => {
+    .catch((err) => {
       console.error('Failed to init DB:', err);
       process.exit(1);
     });
