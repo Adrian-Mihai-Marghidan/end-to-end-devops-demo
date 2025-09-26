@@ -57,6 +57,12 @@ Postgres  (5432)  <── persistent volume `infra_pgdata`
 
 ---
 
+### Architecture diagram
+
+![alt text](image.png)
+
+---
+
 ## Prerequisites
 
 - Docker Desktop (with **WSL integration** if on Windows)
