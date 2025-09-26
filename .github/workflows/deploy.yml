@@ -1,0 +1,51 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to deploy (e.g., sha-abc1234 or latest)"
+        required: true
+        default: "latest"
+
+permissions:
+  contents: read
+
+env:
+  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/backend
+  WEB_IMAGE: ghcr.io/${{ github.repository }}/web
+
+jobs:
+  deploy:
+    runs-on: ubuntu-22.04
+    environment: prod   # 👈 Protect this in GitHub > Settings > Environments
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -euxo pipefail
+            TAG="${{ github.event.inputs.tag }}"
+
+            # optional: login if GHCR packages are private
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
+              -u "${{ secrets.GHCR_USER }}" --password-stdin
+
+            cd /opt/end-to-end-devops-demo   # 👈 adjust to where repo/compose lives on server
+
+            BACKEND_IMAGE="${{ env.BACKEND_IMAGE }}"
+            WEB_IMAGE="${{ env.WEB_IMAGE }}"
+
+            TAG="$TAG" BACKEND_IMAGE="$BACKEND_IMAGE" WEB_IMAGE="$WEB_IMAGE" \
+              docker compose -f infra/docker-compose.yml pull
+
+            TAG="$TAG" BACKEND_IMAGE="$BACKEND_IMAGE" WEB_IMAGE="$WEB_IMAGE" \
+              docker compose -f infra/docker-compose.yml up -d
+
+            # quick health check
+            curl -fsS http://localhost:8081/api/health | grep -i ok
