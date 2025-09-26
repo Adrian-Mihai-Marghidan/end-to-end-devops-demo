@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ dev, feature/** ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t backend-local:ci-${GITHUB_SHA::7} ./backend
+
+      - name: Build web image
+        run: docker build -f infra/nginx/Dockerfile \
+               -t web-local:ci-${GITHUB_SHA::7} .
+
+      - name: Start stack (Compose smoke)
+        run: |
+          BACKEND_IMAGE=backend-local WEB_IMAGE=web-local TAG=ci-${GITHUB_SHA::7} \
+            docker compose -f infra/docker-compose.yml up -d
+          for i in {1..30}; do
+            curl -fsS http://localhost:8081/api/health && break || sleep 2
+          done
+
+      - name: Make smoke script executable
+        run: chmod +x scripts/smoke.sh
+
+      - name: Smoke tests
+        run: ./scripts/smoke.sh
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v
