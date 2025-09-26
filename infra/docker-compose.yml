@@ -1,11 +1,11 @@
+# infra/docker-compose.yml  (single prod-style compose)
+
 services:
   backend:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/backend}:${TAG:-latest}
     container_name: backend
     ports:
-      - "3000:3000"
+      - "3000:3000"     # optional to expose; keep if you want to curl backend directly
     restart: unless-stopped
     environment:
       DB_HOST: db
@@ -17,15 +17,13 @@ services:
       - db
 
   web:
-    image: nginx:alpine
+    image: ${WEB_IMAGE:-ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/web}:${TAG:-latest}
     container_name: web
     depends_on:
       - backend
     ports:
-      - "8081:80"
-    volumes:
-      - ../frontend:/usr/share/nginx/html:ro
-      - ./nginx/nginx.config:/etc/nginx/conf.d/default.conf:ro
+      - "8081:80"       # host:container
+    # no volumes here (we’re using the baked image)
 
   db:
     image: postgres:16-alpine
@@ -55,7 +53,7 @@ services:
     image: grafana/grafana:11.2.0
     container_name: grafana
     ports:
-      - "3001:3000"          # host:container (avoid clashing with backend 3000)
+      - "3001:3000"
     volumes:
       - grafana_data:/var/lib/grafana
     environment:
