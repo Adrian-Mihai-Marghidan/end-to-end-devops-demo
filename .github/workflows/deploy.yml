@@ -11,10 +11,6 @@ on:
 permissions:
   contents: read
 
-env:
-  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/backend
-  WEB_IMAGE: ghcr.io/${{ github.repository }}/web
-
 jobs:
   deploy:
     runs-on: ubuntu-22.04
