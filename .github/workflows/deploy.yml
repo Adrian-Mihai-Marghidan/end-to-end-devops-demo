@@ -28,14 +28,11 @@ jobs:
             set -euxo pipefail
             TAG="${{ github.event.inputs.tag }}"
 
-            # optional: login if GHCR packages are private
+            # login if GHCR packages are private
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
               -u "${{ secrets.GHCR_USER }}" --password-stdin
 
             cd /opt/end-to-end-devops-demo   # 👈 adjust to where repo/compose lives on server
-
-            BACKEND_IMAGE="${{ env.BACKEND_IMAGE }}"
-            WEB_IMAGE="${{ env.WEB_IMAGE }}"
 
             TAG="$TAG" docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml pull
             TAG="$TAG" docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml up -d
