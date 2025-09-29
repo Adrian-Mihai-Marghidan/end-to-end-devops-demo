@@ -1,11 +1,8 @@
-# infra/docker-compose.yml  (single prod-style compose)
-
+# infra/compose.base.yml
 services:
   backend:
-    image: ${BACKEND_IMAGE:-ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/backend}:${TAG:-latest}
     container_name: backend
-    ports:
-      - "3000:3000"     # optional to expose; keep if you want to curl backend directly
+    depends_on: [db]
     restart: unless-stopped
     environment:
       DB_HOST: db
@@ -13,17 +10,14 @@ services:
       DB_USER: appuser
       DB_PASSWORD: apppass
       DB_NAME: appdb
-    depends_on:
-      - db
+    ports:
+      - "3000:3000"   # optional for direct curl
 
   web:
-    image: ${WEB_IMAGE:-ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/web}:${TAG:-latest}
     container_name: web
-    depends_on:
-      - backend
+    depends_on: [backend]
     ports:
-      - "8081:80"       # host:container
-    # no volumes here (we’re using the baked image)
+      - "8081:80"     # host:container
 
   db:
     image: postgres:16-alpine
@@ -38,16 +32,14 @@ services:
   prometheus:
     image: prom/prometheus:v2.55.1
     container_name: prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prom_data:/prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
     ports:
       - "9090:9090"
+    depends_on: [backend]
     restart: unless-stopped
-    depends_on:
-      - backend
 
   grafana:
     image: grafana/grafana:11.2.0
@@ -59,9 +51,8 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on: [prometheus]
     restart: unless-stopped
-    depends_on:
-      - prometheus
 
 volumes:
   pgdata:

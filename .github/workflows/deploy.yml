@@ -41,11 +41,8 @@ jobs:
             BACKEND_IMAGE="${{ env.BACKEND_IMAGE }}"
             WEB_IMAGE="${{ env.WEB_IMAGE }}"
 
-            TAG="$TAG" BACKEND_IMAGE="$BACKEND_IMAGE" WEB_IMAGE="$WEB_IMAGE" \
-              docker compose -f infra/docker-compose.yml pull
-
-            TAG="$TAG" BACKEND_IMAGE="$BACKEND_IMAGE" WEB_IMAGE="$WEB_IMAGE" \
-              docker compose -f infra/docker-compose.yml up -d
+            TAG="$TAG" docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml pull
+            TAG="$TAG" docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml up -d
 
             # quick health check
             curl -fsS http://localhost:8081/api/health | grep -i ok

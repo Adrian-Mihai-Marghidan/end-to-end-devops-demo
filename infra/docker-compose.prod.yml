@@ -1,0 +1,7 @@
+# infra/docker-compose.prod.yml
+services:
+  backend:
+    image: ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/backend:${TAG:-latest}
+
+  web:
+    image: ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/web:${TAG:-latest}
