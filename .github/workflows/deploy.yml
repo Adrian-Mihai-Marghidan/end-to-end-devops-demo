@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy (self-hosted)
 
 on:
   workflow_dispatch:
@@ -13,29 +13,24 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: self-hosted
-    environment: prod   # 👈 Protect this in GitHub > Settings > Environments
+    runs-on: self-hosted           # your WSL runner
+    environment: prod              # use Environment 'prod' for secrets/approvals
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            set -euxo pipefail
-            TAG="${{ github.event.inputs.tag }}"
+      - name: Login to GHCR (private images)
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
+            -u "${{ secrets.GHCR_USER }}" --password-stdin
 
-            # login if GHCR packages are private
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
-              -u "${{ secrets.GHCR_USER }}" --password-stdin
+      - name: Pull & run (base + prod compose)
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          cd infra
+          docker compose -f compose.base.yml -f docker-compose.prod.yml pull
+          docker compose -f compose.base.yml -f docker-compose.prod.yml up -d
 
-            cd /opt/end-to-end-devops-demo   # 👈 adjust to where repo/compose lives on server
+      - name: Health check
+        run: curl -fsS http://localhost:8081/api/health | grep -i ok
 
-            TAG="$TAG" docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml pull
-            TAG="$TAG" docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml up -d
-
-            # quick health check
-            curl -fsS http://localhost:8081/api/health | grep -i ok
