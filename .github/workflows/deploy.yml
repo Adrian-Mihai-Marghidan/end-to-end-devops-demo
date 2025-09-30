@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     environment: prod   # 👈 Protect this in GitHub > Settings > Environments
     steps:
       - uses: actions/checkout@v4
