@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "[smoke] Waiting for NGINX/backend on :8081 ..."
 
-# 1) Health
+# 1) Wait for health (backend behind NGINX)
 for i in {1..30}; do
   if curl -fsS http://localhost:8081/api/health | grep -qi "ok"; then
     echo "[smoke] backend is ready ✅"
@@ -19,7 +19,7 @@ done
 
 # 2) Index (also primes the request counter)
 echo "[smoke] Checking index.html..."
-curl -fsS http://localhost:8081/ | grep -qi "<!DOCTYPE html"
+curl -fsS http://localhost:8081/ | grep -qi "<!DOCTYPE html>"
 
 # 3) Metrics (must contain http_requests_total)
 echo "[smoke] Checking metrics..."
@@ -34,7 +34,7 @@ for i in {1..30}; do
   sleep 2
 done
 
-if [[ "${metrics_ok}" != "true" ]]; then
+if [[ "$metrics_ok" != "true" ]]; then
   echo "[smoke] ❌ metrics never contained 'http_requests_total'"
   echo "[smoke] Dumping first 50 lines of /api/metrics for debugging:"
   curl -fsS http://localhost:8081/api/metrics | head -n 50 || true
