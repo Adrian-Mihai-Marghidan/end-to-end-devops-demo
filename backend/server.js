@@ -1,9 +1,9 @@
 // backend/server.js
 const http = require('http');          // built-in HTTP server
 const { Pool } = require('pg');        // Postgres driver
+const client = require('prom-client'); // Prometheus metrics client
 
 const port = 3000;                     // backend listens on port 3000
-let hits = 0;                          // in-memory counter for Prometheus
 
 // Read DB config from environment (injected by docker-compose)
 const {
@@ -70,9 +70,26 @@ async function incrementAndGet() {
   return rows[0].total;
 }
 
+// ----------------- Prometheus metrics setup -----------------
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+
+// Counter for total HTTP requests
+const httpRequests = new client.Counter({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+});
+register.registerMetric(httpRequests);
+// ------------------------------------------------------------
+
 // Request handler (exported for tests)
 function handler(req, res) {
   const path = new URL(req.url, 'http://localhost').pathname;
+
+  // Increment request counter for all routes except /metrics
+  if (path !== '/metrics') {
+    httpRequests.inc();
+  }
 
   // Health check (with 5s delay) + DB ping
   if (path === '/health') {
@@ -89,15 +106,16 @@ function handler(req, res) {
     return;
   }
 
-  // Prometheus metrics (still in-memory counter)
+  // Prometheus metrics
   if (path === '/metrics') {
-    hits++;
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    return res.end(
-      `# HELP app_requests_total Total requests\n` +
-      `# TYPE app_requests_total counter\n` +
-      `app_requests_total ${hits}\n`
-    );
+    res.setHeader('Content-Type', register.contentType);
+    register.metrics()
+      .then((metrics) => res.end(metrics))
+      .catch((err) => {
+        res.statusCode = 500;
+        res.end(`# metrics_error ${err.message}\n`);
+      });
+    return;
   }
 
   // DB-backed counter endpoint
