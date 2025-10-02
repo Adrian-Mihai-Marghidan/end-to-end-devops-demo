@@ -15,12 +15,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Start stack (dev override) and build
-        run: |
-          docker compose -f infra/compose.base.yml -f infra/docker-compose.dev.yml up -d --build
-          # wait until backend is ready via NGINX
-          for i in {1..30}; do
-            curl -fsS http://localhost:8081/api/health && break || sleep 2
-          done
+        run: docker compose -f infra/compose.base.yml -f infra/docker-compose.dev.yml up -d --build
 
       - name: Make smoke script executable
         run: chmod +x scripts/smoke.sh
