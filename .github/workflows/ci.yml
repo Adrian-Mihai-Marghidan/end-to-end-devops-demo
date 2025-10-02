@@ -11,23 +11,25 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-22.04
+
     steps:
       - uses: actions/checkout@v4
 
+      # Start the stack using the DEV override (bind mounts + local backend build)
       - name: Start stack (dev override) and build
         run: |
           docker compose -f infra/compose.base.yml -f infra/docker-compose.dev.yml up -d --build
-          # wait until backend is ready via NGINX
-          for i in {1..30}; do
-            curl -fsS http://localhost:8081/api/health && break || sleep 2
-          done
 
+      # Make sure the smoke script is executable (in case a contributor forgot)
       - name: Make smoke script executable
         run: chmod +x scripts/smoke.sh
 
+      # Run smoke tests (contains its own readiness loop now)
       - name: Smoke tests
         run: ./scripts/smoke.sh
 
+      # Always tear down the stack and volumes (even if a step failed)
       - name: Cleanup
         if: always()
         run: docker compose -f infra/compose.base.yml -f infra/docker-compose.dev.yml down -v
+
