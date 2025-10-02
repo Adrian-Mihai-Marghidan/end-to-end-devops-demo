@@ -1,11 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOST="${1:-http://localhost:8081}"
+echo "[smoke] Waiting for NGINX/backend on :8081 ..."
 
-echo "[smoke] Hitting $HOST …"
-curl -fsS "$HOST/" | grep -i "<!DOCTYPE html" >/dev/null
-curl -fsS "$HOST/api/health" | grep -i "ok" >/dev/null
-curl -fsS "$HOST/api/metrics" | grep -i "http_requests_total" >/dev/null
-echo "[smoke] OK"
+# Wait for health
+for i in {1..30}; do
+  if curl -fsS http://localhost:8081/api/health | grep -i "ok"; then
+    echo "[smoke] backend is ready ✅"
+    break
+  fi
+  echo "[smoke] not ready yet... ($i/30)"; sleep 2
+done
 
+echo "[smoke] Checking index.html..."
+curl -fsS http://localhost:8081/ | grep -i "<!DOCTYPE html"
+
+echo "[smoke] Checking metrics..."
+for i in {1..30}; do
+  if curl -fsS http://localhost:8081/api/metrics | grep -i "http_requests_total"; then
+    echo "[smoke] metrics OK ✅"
+    break
+  fi
+  echo "[smoke] metrics not ready yet... ($i/30)"; sleep 2
+done
+
+echo "[smoke] All checks passed 🎉"
