@@ -14,7 +14,8 @@ permissions:
 jobs:
   deploy:
     runs-on: self-hosted           # your WSL runner
-    environment: prod              # use Environment 'prod' for secrets/approvals
+    environment: prod              # uses Environment 'prod' for secrets/approvals
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,6 +23,12 @@ jobs:
         run: |
           echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
             -u "${{ secrets.GHCR_USER }}" --password-stdin
+
+      # Bring any old stack down first (keep volumes = keep DB data)
+      - name: Tear down old stack (keep volumes)
+        run: |
+          cd infra
+          docker compose -f compose.base.yml -f docker-compose.prod.yml down --remove-orphans || true
 
       - name: Pull & run (base + prod compose)
         env:
@@ -33,4 +40,3 @@ jobs:
 
       - name: Health check
         run: curl -fsS http://localhost:8081/api/health | grep -i ok
-
