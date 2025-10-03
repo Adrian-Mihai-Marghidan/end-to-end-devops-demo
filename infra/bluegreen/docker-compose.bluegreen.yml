@@ -1,0 +1,58 @@
+services:
+  # BLUE (current live)
+  backend-blue:
+    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/backend:${TAG_BLUE:-latest}
+    container_name: backend-blue
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: appuser
+      DB_PASSWORD: apppass
+      DB_NAME: appdb
+    depends_on: [db]
+    restart: unless-stopped
+    networks:
+      net-blue:
+        aliases: [backend]   # web-blue can reach "backend:3000"
+      default: {}            # to reach db/prometheus/grafana
+
+  web-blue:
+    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/web:${TAG_BLUE:-latest}
+    container_name: web-blue
+    depends_on: [backend-blue]
+    restart: unless-stopped
+    networks:
+      net-blue: {}           # isolated from green
+
+  # GREEN (candidate)
+  backend-green:
+    image: ghcr.io/${REPO_LC:-adrian-Mihai-Marghidan/end-to-end-devops-demo}/backend:${TAG_GREEN:-latest}
+    container_name: backend-green
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: appuser
+      DB_PASSWORD: apppass
+      DB_NAME: appdb
+    depends_on: [db]
+    restart: unless-stopped
+    networks:
+      net-green:
+        aliases: [backend]   # web-green can reach "backend:3000"
+      default: {}
+
+  web-green:
+    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/web:${TAG_GREEN:-latest}
+    container_name: web-green
+    depends_on: [backend-green]
+    restart: unless-stopped
+    networks:
+      net-green: {}
+    # expose GREEN on 8082 for pre-switch testing
+    ports:
+      - "8082:80"
+
+networks:
+  net-blue:
+  net-green:
+  # 'default' is created automatically; backends join it to talk to db/prometheus
