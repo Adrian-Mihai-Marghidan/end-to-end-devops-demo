@@ -1,25 +1,30 @@
 version: "3.9"
 
-# This overlay is used together with your base+prod files.
-# It disables the single 'web' and 'backend' and introduces two stacks:
-#   BLUE:  web-blue + backend-blue  (public on :8081)
-#   GREEN: web-green + backend-green (public on :8082)
+# Blue/Green overlay used together with:
+#   - infra/compose.base.yml  (db, prometheus, grafana, etc.)
+#   - infra/docker-compose.prod.yml (prod-style web image, no bind mounts)
+#
+# This file:
+#  - disables the single 'web' and 'backend' so they don't clash
+#  - adds BLUE and GREEN copies of web+backend
+#  - isolates each color on its own network so 'web' can proxy to 'backend'
+#    via the SAME nginx config (proxy_pass http://backend:3000)
+#  - exposes BLUE on :8081 (live) and GREEN on :8082 (pre-switch testing)
 
 services:
-  # Disable the singletons from base to avoid clashes.
+  # Disable singleton services from base/prod in blue/green mode
   backend:
-    profiles: ["_disabled"]   # don't start this service in blue/green mode
+    profiles: ["_disabled"]
   web:
     profiles: ["_disabled"]
 
-  # -------------------------
+  # =======================
   # BLUE (current live)
-  # -------------------------
+  # =======================
   backend-blue:
     container_name: backend-blue
-    # Image built by your Release workflow and pushed to GHCR
-    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/backend:${TAG_BLUE:-latest}
-    # DB env the same as your normal backend
+    # Hardcoded GHCR path to your backend image
+    image: ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/backend:${TAG_BLUE:-latest}
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -29,14 +34,14 @@ services:
     depends_on:
       db:
         condition: service_started
+    # Join BLUE network with alias "backend" so web-blue's nginx (proxy_pass http://backend:3000)
+    # reaches THIS container; also join default to talk to db/prom/grafana
     networks:
-      # Join the BLUE network and answer to the hostname "backend" there.
       net-blue:
         aliases: [backend]
-      # Also join default so you can reach db/prometheus/grafana
       default: {}
     expose:
-      - "3000"                # only inside Docker; no host port needed for backend
+      - "3000"   # internal only (nginx reaches it); no host port here
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
       interval: 5s
@@ -46,23 +51,23 @@ services:
 
   web-blue:
     container_name: web-blue
-    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/web:${TAG_BLUE:-latest}
+    image: ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/web:${TAG_BLUE:-latest}
     depends_on:
       backend-blue:
         condition: service_healthy
     networks:
-      net-blue: {}            # join BLUE network so 'backend' resolves to backend-blue
-      default: {}             # harmless; lets web see other infra if needed
+      net-blue: {}   # must be on same network so 'backend' resolves to backend-blue
+      default: {}    # harmless; lets it see shared infra if needed
     ports:
-      - "8081:80"             # public BLUE entrypoint
+      - "8081:80"    # BLUE public entrypoint (live)
     restart: unless-stopped
 
-  # -------------------------
+  # =======================
   # GREEN (candidate)
-  # -------------------------
+  # =======================
   backend-green:
     container_name: backend-green
-    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/backend:${TAG_GREEN:-latest}
+    image: ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/backend:${TAG_GREEN:-latest}
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -74,7 +79,7 @@ services:
         condition: service_started
     networks:
       net-green:
-        aliases: [backend]    # on GREEN network, 'backend' points to backend-green
+        aliases: [backend]   # on GREEN net, 'backend' → backend-green
       default: {}
     expose:
       - "3000"
@@ -87,19 +92,19 @@ services:
 
   web-green:
     container_name: web-green
-    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/web:${TAG_GREEN:-latest}
+    image: ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/web:${TAG_GREEN:-latest}
     depends_on:
       backend-green:
         condition: service_healthy
     networks:
-      net-green: {}           # join GREEN network so 'backend' resolves to backend-green
+      net-green: {}  # must be on same network so 'backend' resolves to backend-green
       default: {}
     ports:
-      - "8082:80"             # public GREEN entrypoint (for pre-switch testing)
+      - "8082:80"    # GREEN public entrypoint (pre-switch testing)
     restart: unless-stopped
 
 networks:
-  net-blue:                    # isolates BLUE pair
-  net-green:                   # isolates GREEN pair
-# 'default' is created automatically and already used by db/prometheus/grafana
+  net-blue:    # isolates BLUE pair (web-blue <-> backend-blue)
+  net-green:   # isolates GREEN pair (web-green <-> backend-green)
+# 'default' network exists from base compose; used to reach db/prom/grafana
 
