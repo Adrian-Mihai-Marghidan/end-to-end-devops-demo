@@ -1,108 +1,167 @@
 # End-to-End DevOps Demo
 
-This repository demonstrates a complete CI/CD and observability pipeline with Docker, GitHub Actions, Prometheus, and Grafana.
+This repository demonstrates a complete **end-to-end DevOps pipeline** with CI/CD, observability, and deployment using **Docker Compose**.
 
 ---
 
 ## 📌 Architecture
 
+The system consists of the following components:
+
+- **Frontend (NGINX)**
+  - Serves static files (`index.html`)
+  - Proxies API requests (`/api/*`) to the backend
+  - Exposed on **port 8081**
+
+- **Backend (Node.js service)**
+  - Minimal Node.js HTTP server
+  - Endpoints:
+    - `/health` → returns service health
+    - `/hits` → returns DB-backed counter
+    - `/metrics` → exposes Prometheus metrics
+  - Connects to PostgreSQL via pg driver
+  - Runs on **port 3000** (internal)
+
+- **Database (PostgreSQL)**
+  - Stores persistent application data
+  - Persistent volume keeps state across restarts
+  - Used for tracking hit counters
+
+- **Prometheus**
+  - Scrapes backend `/metrics`
+  - Provides monitoring data
+  - Runs on **port 9090**
+
+- **Grafana**
+  - Connects to Prometheus as data source
+  - Visualizes metrics in dashboards
+  - Runs on **port 3001**
+
+### Diagram
+
 ![Architecture Diagram](image.png)
 
-### Components:
-- **Frontend (NGINX)**: Serves static `index.html` and proxies API requests to the backend.
-- **Backend (Node.js)**: Simple Node.js service with PostgreSQL persistence and Prometheus metrics endpoint.
-- **Database (PostgreSQL)**: Persists data across container restarts.
-- **Prometheus**: Scrapes backend metrics (`/metrics` endpoint).
-- **Grafana**: Visualizes metrics via dashboards.
-- **NGINX**: Runs on port **8081**, proxies `/api/*` requests to backend on port **3000**.
-
 ---
 
-## 🚀 Workflows
+## ⚙️ Local Development
 
-- **CI Workflow** (`ci.yml`)
-  - Runs tests and smoke checks on pull requests and feature branches.
-- **Release Workflow** (`release.yml`)
-  - Builds and pushes Docker images (`backend` and `web`) to GHCR.
-- **Deploy Workflow** (`deploy.yml`)
-  - Deploys images on a **self-hosted runner** with manual approval for production.
-
----
-
-## 🛠️ Running Locally
-
-Start the development environment:
+Bring up the development environment:
 
 ```bash
 docker compose -f infra/compose.base.yml -f infra/docker-compose.dev.yml up -d --build
 ```
 
-Then visit:
+Check services:
+
 - Frontend: [http://localhost:8081](http://localhost:8081)
-- Backend health: [http://localhost:3000/health](http://localhost:3000/health)
-- Backend metrics: [http://localhost:3000/metrics](http://localhost:3000/metrics)
+- Backend direct: [http://localhost:3000/health](http://localhost:3000/health)
+- Metrics: [http://localhost:3000/metrics](http://localhost:3000/metrics)
 - Prometheus: [http://localhost:9090](http://localhost:9090)
 - Grafana: [http://localhost:3001](http://localhost:3001)
 
----
-
-## 📊 Observability
-
-- Prometheus scrapes metrics from backend every **15s** (`infra/prometheus/prometheus.yml`).
-- Grafana connects to Prometheus as a datasource for dashboards.
-
----
-
-## 🔄 Blue-Green Deployment
-
-Blue-green strategy is defined in `infra/bluegreen/`:
-
-- `docker-compose.bluegreen.yml`: Defines **blue** and **green** stacks.
-- `blue-active.yml` and `green-active.yml`: Flip which stack serves traffic on **8081**.
-
-Demo sequence:
+Stop everything:
 
 ```bash
-# Start both colors
-docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml -f infra/bluegreen/docker-compose.bluegreen.yml up -d
-
-# Test endpoints
-curl -fsS http://localhost:8081/api/health   # Blue
-curl -fsS http://localhost:8082/api/health   # Green
-
-# Switch to Blue
-docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml -f infra/bluegreen/docker-compose.bluegreen.yml -f infra/bluegreen/blue-active.yml up -d
-
-# Flip to Green
-docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml -f infra/bluegreen/docker-compose.bluegreen.yml -f infra/bluegreen/green-active.yml up -d
+docker compose -f infra/compose.base.yml -f infra/docker-compose.dev.yml down -v
 ```
 
 ---
 
-## ✅ Smoke Tests
+## 🧪 Smoke Tests
 
-Smoke tests run automatically during CI:
+The repository includes a `scripts/smoke.sh` script for health verification:
 
 ```bash
 ./scripts/smoke.sh
 ```
 
-Checks performed:
-1. Backend health endpoint (`/api/health`).
-2. Frontend `index.html` is served.
-3. Metrics endpoint (`/api/metrics`) contains `http_requests_total`.
+It checks:
+1. Backend health (`/api/health`)
+2. Frontend index (`index.html`)
+3. Metrics endpoint (`/api/metrics`)
 
 ---
 
-## 📦 Packages
+## 🚀 CI/CD Workflows
 
-Docker images are published to **GitHub Container Registry (GHCR):**
+### 1. CI (Build & Test)
+- Triggered on pull requests and pushes to `dev` or `feature/*`
+- Runs smoke tests in GitHub Actions
 
-- `ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/backend`
-- `ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/web`
+### 2. Release (Build & Push)
+- Triggered on push to `main`
+- Builds Docker images for:
+  - `backend`
+  - `web`
+- Pushes them to GitHub Container Registry (**GHCR**)
+
+### 3. Deploy (Self-hosted)
+- Triggered manually (`workflow_dispatch`)
+- Pulls latest images from GHCR
+- Runs production stack on a **self-hosted runner**
 
 ---
 
-## 👤 Author
+## 🟦🟩 Blue-Green Deployment
 
-**Adrian Mihai Marghidan**
+We support **blue-green deployment**:
+
+- `docker-compose.bluegreen.yml` defines parallel blue/green stacks
+- `blue-active.yml` → BLUE serves traffic on port 8081
+- `green-active.yml` → GREEN serves traffic on port 8081 (flip switch)
+
+Test sequence:
+
+```bash
+# Bring up both (Blue = 8081, Green = 8082)
+docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml -f infra/bluegreen/docker-compose.bluegreen.yml up -d
+
+# Flip live traffic to GREEN
+docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml -f infra/bluegreen/docker-compose.bluegreen.yml -f infra/bluegreen/green-active.yml up -d
+```
+
+---
+
+## 📊 Observability
+
+- **Prometheus** scrapes `/metrics`
+- **Grafana** visualizes metrics
+- Example dashboards:
+  - HTTP request rate
+  - Error counts
+  - DB hit counters
+
+---
+
+## ✅ Data Persistence Demo
+
+1. Start the stack and hit `/api/hits` a few times
+2. Stop and restart containers (`down` without `-v`)
+3. Check `/api/hits` again → counter is preserved
+4. Run with `down -v` → counter resets (volume removed)
+
+---
+
+## 🔑 Branching & Protection
+
+- Development work happens on `dev` branch
+- `main` branch is **protected**
+  - Requires pull requests
+  - Requires CI checks to pass
+- Releases are merged into `main`
+
+---
+
+## 👨‍💻 How to Contribute
+
+1. Fork this repository
+2. Create a feature branch (`feature/my-change`)
+3. Commit and push changes
+4. Open a pull request into `dev`
+
+---
+
+## 📝 License
+
+This project is for **educational/demo purposes only**.
+
