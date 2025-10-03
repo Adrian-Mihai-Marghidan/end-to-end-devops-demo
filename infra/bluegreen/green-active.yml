@@ -1,0 +1,6 @@
+services:
+  web-green:
+    ports:
+      - "8081:80"
+  web-blue:
+    ports: []   # ensure blue does NOT bind 8081
