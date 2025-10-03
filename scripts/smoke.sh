@@ -19,7 +19,21 @@ done
 
 # 2) Index (also primes the request counter)
 echo "[smoke] Checking index.html..."
-curl -fsS http://localhost:8081/ | grep -qi "<!DOCTYPE html>"
+index_ok=false
+for i in {1..10}; do
+  if curl -fsS http://localhost:8081/ | grep -qi "<!DOCTYPE html>"; then
+    echo "[smoke] index.html OK ✅"
+    index_ok=true
+    break
+  fi
+  echo "[smoke] index.html not ready yet... ($i/10)"
+  sleep 2
+done
+
+if [[ "$index_ok" != "true" ]]; then
+  echo "[smoke] ❌ index.html missing or invalid"
+  exit 1
+fi
 
 # 3) Metrics (must contain http_requests_total)
 echo "[smoke] Checking metrics..."
