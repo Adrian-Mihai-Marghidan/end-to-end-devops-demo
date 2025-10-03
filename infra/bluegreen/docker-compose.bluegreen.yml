@@ -1,58 +1,100 @@
+version: "3.9"
+
+# Overlay for BLUE/GREEN. We disable the single 'web' and 'backend'
+# from compose.base.yml and add color-specific stacks:
+#   web-blue  -> proxies to backend-blue  (network: net-blue)  -> :8081
+#   web-green -> proxies to backend-green (network: net-green) -> :8082
+
 services:
+  # Disable singletons from base so they don't clash
+  backend:
+    profiles: ["_disabled"]
+  web:
+    profiles: ["_disabled"]
+
+  # =======================
   # BLUE (current live)
+  # =======================
   backend-blue:
-    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/backend:${TAG_BLUE:-latest}
     container_name: backend-blue
+    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/backend:${TAG_BLUE:-latest}
     environment:
       DB_HOST: db
       DB_PORT: "5432"
       DB_USER: appuser
       DB_PASSWORD: apppass
       DB_NAME: appdb
-    depends_on: [db]
-    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_started
     networks:
       net-blue:
-        aliases: [backend]   # web-blue can reach "backend:3000"
-      default: {}            # to reach db/prometheus/grafana
+        aliases: [backend]   # web-blue reaches http://backend:3000
+      default: {}            # talk to db/prometheus/grafana on default
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
 
   web-blue:
-    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/web:${TAG_BLUE:-latest}
     container_name: web-blue
-    depends_on: [backend-blue]
-    restart: unless-stopped
+    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/web:${TAG_BLUE:-latest}
+    depends_on:
+      backend-blue:
+        condition: service_healthy
     networks:
-      net-blue: {}           # isolated from green
+      net-blue: {}
+      default: {}
+    ports:
+      - "8081:80"     # public BLUE entrypoint
+    restart: unless-stopped
 
+  # =======================
   # GREEN (candidate)
+  # =======================
   backend-green:
-    image: ghcr.io/${REPO_LC:-adrian-Mihai-Marghidan/end-to-end-devops-demo}/backend:${TAG_GREEN:-latest}
     container_name: backend-green
+    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/backend:${TAG_GREEN:-latest}
     environment:
       DB_HOST: db
       DB_PORT: "5432"
       DB_USER: appuser
       DB_PASSWORD: apppass
       DB_NAME: appdb
-    depends_on: [db]
-    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_started
     networks:
       net-green:
-        aliases: [backend]   # web-green can reach "backend:3000"
+        aliases: [backend]   # web-green reaches http://backend:3000
       default: {}
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
 
   web-green:
-    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/web:${TAG_GREEN:-latest}
     container_name: web-green
-    depends_on: [backend-green]
-    restart: unless-stopped
+    image: ghcr.io/${REPO_LC:-adrian-mihai-marghidan/end-to-end-devops-demo}/web:${TAG_GREEN:-latest}
+    depends_on:
+      backend-green:
+        condition: service_healthy
     networks:
       net-green: {}
-    # expose GREEN on 8082 for pre-switch testing
+      default: {}
     ports:
-      - "8082:80"
+      - "8082:80"     # public GREEN entrypoint (for pre-switch testing)
+    restart: unless-stopped
 
 networks:
   net-blue:
   net-green:
-  # 'default' is created automatically; backends join it to talk to db/prometheus
+# 'default' network is created automatically by Compose; db/prometheus/grafana already use it
