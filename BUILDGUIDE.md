@@ -144,10 +144,3 @@ docker compose ... -f infra/bluegreen/green-active.yml up -d
 - Require review (optional)
 
 ---
-
-## 12) Exam Deliverables
-
-- Application files (repo)
-- Presentation (`pptx`)
-- Build guide (`buildguide.md`)
-- Demo (optional: show CI, Release, Deploy, Observability, DB persistence, Blue/Green)
