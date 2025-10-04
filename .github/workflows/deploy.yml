@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: self-hosted           # your WSL runner
+    runs-on: self-hosted           # my WSL runner
     environment: prod              # uses Environment 'prod' for secrets/approvals
 
     steps:
