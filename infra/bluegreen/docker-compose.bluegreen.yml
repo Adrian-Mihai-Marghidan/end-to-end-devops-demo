@@ -15,11 +15,10 @@ services:
     container_name: prometheus
     command: ["--config.file=/etc/prometheus/prometheus.yml"]
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.bluegreen.yml:/etc/prometheus/prometheus.yml:ro
       - prom_data:/prometheus
     ports:
       - "9090:9090"
-    # IMPORTANT: depend on the blue/green backends (not the disabled singleton 'backend')
     depends_on:
       backend-blue:
         condition: service_started
