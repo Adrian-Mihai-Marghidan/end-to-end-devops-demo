@@ -40,7 +40,7 @@ services:
     container_name: prometheus
     command: ["--config.file=/etc/prometheus/prometheus.yml"]
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.bluegreen.yml:/etc/prometheus/prometheus.yml:ro
       - prom_data:/prometheus
     ports:
       - "9090:9090"
