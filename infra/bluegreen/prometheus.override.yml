@@ -1,0 +1,4 @@
+services:
+  prometheus:
+    # In blue/green, don't depend on the single 'backend'
+    depends_on: []
