@@ -125,11 +125,9 @@ docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml -f inf
 ## 📊 Observability
 
 - **Prometheus** scrapes `/metrics`
++ **Prometheus** scrapes `/metrics` from both `backend-blue` and `backend-green` in Blue/Green mode
 - **Grafana** visualizes metrics
-- Example dashboards:
-  - HTTP request rate
-  - Error counts
-  - DB hit counters
++ **Grafana** visualizes metrics (e.g. HTTP rate, errors, DB counters)
 
 ---
 
