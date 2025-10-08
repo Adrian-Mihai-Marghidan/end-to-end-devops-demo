@@ -1,7 +1,0 @@
-services:
-  prometheus:
-    depends_on:
-      backend-blue:
-        condition: service_started
-      backend-green:
-        condition: service_started
