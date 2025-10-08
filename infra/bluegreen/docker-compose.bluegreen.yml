@@ -1,4 +1,3 @@
-version: "3.9"
 
 # Blue/Green overlay used together with:
 #   - infra/compose.base.yml  (db, prometheus, grafana, etc.)
