@@ -7,7 +7,8 @@
 #  - adds BLUE and GREEN copies of web+backend
 #  - isolates each color on its own network so 'web' can proxy to 'backend'
 #    via the SAME nginx config (proxy_pass http://backend:3000)
-#  - exposes BLUE on :8081 (live) and GREEN on :8082 (pre-switch testing)
+#  - NOTE: no host ports on web-* here; active port is set by
+#          infra/bluegreen/blue-active.yml or green-active.yml
 
 services:
   prometheus:
@@ -64,8 +65,7 @@ services:
     networks:
       net-blue: {}
       default: {}
-    ports:
-      - "8081:80"
+    # no ports here — set by blue-active.yml or green-active.yml
     restart: unless-stopped
 
   # =======================
@@ -100,8 +100,7 @@ services:
     networks:
       net-green: {}
       default: {}
-    ports:
-      - "8082:80"
+    # no ports here — set by blue-active.yml or green-active.yml
     restart: unless-stopped
 
 networks:
