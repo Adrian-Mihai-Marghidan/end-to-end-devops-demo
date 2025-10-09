@@ -163,4 +163,4 @@ docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml -f inf
 
 This project is for **educational/demo purposes only**.
 
-Trigger CI
+Test CI/CD Flow
