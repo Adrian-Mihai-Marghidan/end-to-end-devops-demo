@@ -1,22 +1,22 @@
-name: Switch (Self-Hosted)
+name: Blue-Green Switch (Self-Hosted)
 
 on:
   workflow_dispatch:
     inputs:
       active_color:
         description: "Which color should serve port 8081?"
-        required: true
-        default: "green"
         type: choice
+        required: true
+        default: green
         options: [blue, green]
       tag_blue:
-        description: "Backend/Web image tag for BLUE (e.g., latest or sha-xxxxxxx)"
+        description: "Image tag for BLUE (e.g., latest or sha-xxxxxxx)"
         required: true
-        default: "latest"
+        default: latest
       tag_green:
-        description: "Backend/Web image tag for GREEN (e.g., latest or sha-xxxxxxx)"
+        description: "Image tag for GREEN (e.g., latest or sha-xxxxxxx)"
         required: true
-        default: "latest"
+        default: latest
 
 permissions:
   contents: read
@@ -25,25 +25,20 @@ jobs:
   switch:
     name: Switch Active Color
     runs-on: self-hosted
-    environment: prod            # <- uses your Environment (approval + secrets)
+    environment: prod              # you already have this env + secrets
+
+    # Make tags & GHCR creds available as ENV at job level
+    env:
+      TAG_BLUE:  ${{ github.event.inputs.tag_blue }}
+      TAG_GREEN: ${{ github.event.inputs.tag_green }}
+      GHCR_USER: ${{ secrets.GHCR_USER }}
+      GHCR_TOKEN:${{ secrets.GHCR_TOKEN }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Only needed if your GHCR images are private (uses env secrets from prod)
-      - name: Login to GHCR (optional)
-        if: ${{ secrets.GHCR_TOKEN != '' }}
-        run: |
-          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
-            -u "${{ secrets.GHCR_USER }}" --password-stdin
-
-      - name: Set image tags for both colors
-        run: |
-          echo "TAG_BLUE=${{ github.event.inputs.tag_blue }}"   >> $GITHUB_ENV
-          echo "TAG_GREEN=${{ github.event.inputs.tag_green }}" >> $GITHUB_ENV
-
-      - name: Pick overlay for active color
+      - name: Pick overlay for the active color
         run: |
           if [ "${{ github.event.inputs.active_color }}" = "green" ]; then
             echo "OVERLAY=infra/bluegreen/green-active.yml" >> $GITHUB_ENV
@@ -51,11 +46,13 @@ jobs:
             echo "OVERLAY=infra/bluegreen/blue-active.yml"  >> $GITHUB_ENV
           fi
 
+      # Only logs in if both env vars are non-empty (derived from secrets)
+      - name: Login to GHCR (optional)
+        if: ${{ env.GHCR_TOKEN != '' && env.GHCR_USER != '' }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
       - name: Start/Update Blue-Green stack
-        env:
-          TAG_BLUE:  ${{ env.TAG_BLUE }}
-          TAG_GREEN: ${{ env.TAG_GREEN }}
-          OVERLAY:   ${{ env.OVERLAY }}
         run: |
           docker compose \
             -f infra/compose.base.yml \
@@ -65,17 +62,9 @@ jobs:
             up -d --force-recreate
 
       - name: Show who owns 8081
-        run: |
-          echo "Containers mapped to port 8081:"
-          docker ps --filter "publish=8081" --format "table {{.Names}}\t{{.Ports}}"
+        run: docker ps --filter "publish=8081" --format "table {{.Names}}\t{{.Ports}}"
 
-      - name: Health check (active color via 8081)
+      - name: Health check
         run: |
-          echo "Testing http://localhost:8081/api/health ..."
-          curl -fsS http://localhost:8081/api/health | tee /tmp/health.txt
-          grep -qi "ok" /tmp/health.txt
-
-      - name: Prometheus hint (optional)
-        run: |
-          echo "Check Prometheus targets at: http://localhost:9090/targets"
-          echo "You should see backend-blue:3000 and backend-green:3000 as UP."
+          echo "Hitting http://localhost:8081/api/health ..."
+          curl -fsS http://localhost:8081/api/health | grep -i OK
