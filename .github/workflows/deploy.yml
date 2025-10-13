@@ -1,20 +1,10 @@
-name: Deploy (Self-Hosted)
+name: Deploy (self-hosted)
 
 on:
   workflow_dispatch:
     inputs:
-      active_color:
-        description: "Which color should serve port 8081?"
-        required: true
-        default: "green"
-        type: choice
-        options: [blue, green]
-      tag_blue:
-        description: "Image tag for BLUE (e.g., latest or sha-xxxxxxx)"
-        required: true
-        default: "latest"
-      tag_green:
-        description: "Image tag for GREEN (e.g., latest or sha-xxxxxxx)"
+      tag:
+        description: "Image tag to deploy (e.g., sha-abc1234 or latest)"
         required: true
         default: "latest"
 
@@ -22,64 +12,31 @@ permissions:
   contents: read
 
 jobs:
-  switch:
-    name: Switch Active Color
-    runs-on: self-hosted
-    environment: prod        # you already have this env + secrets set
-
-    # Pull secrets into env (NOTE THE SPACES AFTER :)
-    env:
-      GHCR_USER:  ${{ secrets.GHCR_USER }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+  deploy:
+    runs-on: self-hosted           # your WSL runner
+    environment: prod              # uses Environment 'prod' for secrets/approvals
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Optional: only if your GHCR images are private
-      - name: Login to GHCR (optional)
-        if: ${{ env.GHCR_USER != '' && env.GHCR_TOKEN != '' }}
+      - name: Login to GHCR (private images)
         run: |
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
+            -u "${{ secrets.GHCR_USER }}" --password-stdin
 
-      - name: Set tags for both colors
+      # Bring any old stack down first (keep volumes = keep DB data)
+      - name: Tear down old stack (keep volumes)
         run: |
-          echo "TAG_BLUE=${{ github.event.inputs.tag_blue }}"   >> $GITHUB_ENV
-          echo "TAG_GREEN=${{ github.event.inputs.tag_green }}" >> $GITHUB_ENV
+          cd infra
+          docker compose -f compose.base.yml -f docker-compose.prod.yml down --remove-orphans || true
 
-      - name: Pick overlay for active color
+      - name: Pull & run (base + prod compose)
+        env:
+          TAG: ${{ github.event.inputs.tag }}
         run: |
-          if [ "${{ github.event.inputs.active_color }}" = "green" ]; then
-            echo "OVERLAY=infra/bluegreen/green-active.yml" >> $GITHUB_ENV
-          else
-            echo "OVERLAY=infra/bluegreen/blue-active.yml"  >> $GITHUB_ENV
-          fi
-
-      # Optional “nice to have”: pulls are harmless if images are local
-      - name: Pre-pull images (optional)
-        run: |
-          docker pull ghcr.io/${{ github.repository }}/backend:${TAG_BLUE}  || true
-          docker pull ghcr.io/${{ github.repository }}/web:${TAG_BLUE}      || true
-          docker pull ghcr.io/${{ github.repository }}/backend:${TAG_GREEN} || true
-          docker pull ghcr.io/${{ github.repository }}/web:${TAG_GREEN}     || true
-
-      - name: Start/Update Blue-Green stack
-        run: |
-          docker compose \
-            -f infra/compose.base.yml \
-            -f infra/docker-compose.prod.yml \
-            -f infra/bluegreen/docker-compose.bluegreen.yml \
-            -f "${OVERLAY}" \
-            up -d --force-recreate
-
-      - name: Who owns 8081?
-        run: docker ps --filter "publish=8081" --format "table {{.Names}}\t{{.Ports}}"
+          cd infra
+          docker compose -f compose.base.yml -f docker-compose.prod.yml pull
+          docker compose -f compose.base.yml -f docker-compose.prod.yml up -d
 
       - name: Health check
-        run: |
-          curl -fsS http://localhost:8081/api/health | tee /tmp/health.txt
-          grep -qi "ok" /tmp/health.txt || (echo "Health not OK" && exit 1)
-
-      - name: (Info) Prometheus targets
-        run: |
-          echo "Check http://localhost:9090/targets — both backend-blue:3000 and backend-green:3000 should be UP."
+        run: curl -fsS http://localhost:8081/api/health | grep -i ok
