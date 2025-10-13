@@ -25,61 +25,92 @@ jobs:
   switch:
     name: Switch Active Color
     runs-on: self-hosted
-    environment: prod        # you already have this env + secrets set
-
-    # Pull secrets into env (NOTE THE SPACES AFTER :)
-    env:
-      GHCR_USER:  ${{ secrets.GHCR_USER }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+    # remove the next line if you don't want env approvals on this workflow
+    environment: prod
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Optional: only if your GHCR images are private
+      # Optional login — guarded by env so missing secrets don't break the run
       - name: Login to GHCR (optional)
-        if: ${{ env.GHCR_USER != '' && env.GHCR_TOKEN != '' }}
+        env:
+          GHCR_USER:  ${{ secrets.GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-
-      - name: Set tags for both colors
-        run: |
-          echo "TAG_BLUE=${{ github.event.inputs.tag_blue }}"   >> $GITHUB_ENV
-          echo "TAG_GREEN=${{ github.event.inputs.tag_green }}" >> $GITHUB_ENV
-
-      - name: Pick overlay for active color
-        run: |
-          if [ "${{ github.event.inputs.active_color }}" = "green" ]; then
-            echo "OVERLAY=infra/bluegreen/green-active.yml" >> $GITHUB_ENV
+          if [ -n "$GHCR_USER" ] && [ -n "$GHCR_TOKEN" ]; then
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
           else
-            echo "OVERLAY=infra/bluegreen/blue-active.yml"  >> $GITHUB_ENV
+            echo "Skipping GHCR login (no secrets provided)."
           fi
 
-      # Optional “nice to have”: pulls are harmless if images are local
-      - name: Pre-pull images (optional)
+      - name: Set tags and overlay
         run: |
-          docker pull ghcr.io/${{ github.repository }}/backend:${TAG_BLUE}  || true
-          docker pull ghcr.io/${{ github.repository }}/web:${TAG_BLUE}      || true
-          docker pull ghcr.io/${{ github.repository }}/backend:${TAG_GREEN} || true
-          docker pull ghcr.io/${{ github.repository }}/web:${TAG_GREEN}     || true
+          echo "TAG_BLUE=${{ inputs.tag_blue }}"   >> $GITHUB_ENV
+          echo "TAG_GREEN=${{ inputs.tag_green }}" >> $GITHUB_ENV
+          if [ "${{ inputs.active_color }}" = "green" ]; then
+            echo "OVERLAY=infra/bluegreen/green-active.yml" >> $GITHUB_ENV
+            echo "ACTIVE=web-green"   >> $GITHUB_ENV
+            echo "INACTIVE=web-blue"  >> $GITHUB_ENV
+          else
+            echo "OVERLAY=infra/bluegreen/blue-active.yml"  >> $GITHUB_ENV
+            echo "ACTIVE=web-blue"    >> $GITHUB_ENV
+            echo "INACTIVE=web-green" >> $GITHUB_ENV
+          fi
+          # Lowercased owner/repo for GHCR pulls
+          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
-      - name: Start/Update Blue-Green stack
+      # If a previous "single-color" stack exists, free port 8081
+      - name: Preflight — stop plain prod stack (ignore if none)
+        run: |
+          docker compose \
+            -f infra/compose.base.yml \
+            -f infra/docker-compose.prod.yml \
+            down --remove-orphans || true
+
+      # Optional: pre-pull images quietly (uses lowercased repo)
+      - name: Pre-pull images (optional)
+        env:
+          TAG_BLUE:  ${{ env.TAG_BLUE }}
+          TAG_GREEN: ${{ env.TAG_GREEN }}
+          REPO_LC:   ${{ env.REPO_LC }}
+        run: |
+          docker pull ghcr.io/${REPO_LC}/backend:${TAG_BLUE}  || true
+          docker pull ghcr.io/${REPO_LC}/web:${TAG_BLUE}      || true
+          docker pull ghcr.io/${REPO_LC}/backend:${TAG_GREEN} || true
+          docker pull ghcr.io/${REPO_LC}/web:${TAG_GREEN}     || true
+
+      # Phase 1: recreate the INACTIVE web first (overlay gives it ports: [])
+      - name: Phase 1 — drop 8081 from inactive side
+        env:
+          OVERLAY:  ${{ env.OVERLAY }}
+          INACTIVE: ${{ env.INACTIVE }}
         run: |
           docker compose \
             -f infra/compose.base.yml \
             -f infra/docker-compose.prod.yml \
             -f infra/bluegreen/docker-compose.bluegreen.yml \
             -f "${OVERLAY}" \
-            up -d --force-recreate
+            up -d --force-recreate "${INACTIVE}"
+
+      # Phase 2: start/update the ACTIVE side (claims 8081)
+      - name: Phase 2 — start/update active side
+        env:
+          OVERLAY: ${{ env.OVERLAY }}
+          ACTIVE:  ${{ env.ACTIVE }}
+        run: |
+          docker compose \
+            -f infra/compose.base.yml \
+            -f infra/docker-compose.prod.yml \
+            -f infra/bluegreen/docker-compose.bluegreen.yml \
+            -f "${OVERLAY}" \
+            up -d --force-recreate "${ACTIVE}" db prometheus grafana backend-blue backend-green
 
       - name: Who owns 8081?
         run: docker ps --filter "publish=8081" --format "table {{.Names}}\t{{.Ports}}"
 
       - name: Health check
-        run: |
-          curl -fsS http://localhost:8081/api/health | tee /tmp/health.txt
-          grep -qi "ok" /tmp/health.txt || (echo "Health not OK" && exit 1)
+        run: curl -fsS http://localhost:8081/api/health | grep -i ok || (echo "Health failed" && exit 1)
 
       - name: (Info) Prometheus targets
-        run: |
-          echo "Check http://localhost:9090/targets — both backend-blue:3000 and backend-green:3000 should be UP."
+        run: echo "Check http://localhost:9090/targets → backend-blue:3000 and backend-green:3000 should be UP."
