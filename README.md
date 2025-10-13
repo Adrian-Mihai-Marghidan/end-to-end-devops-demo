@@ -100,6 +100,11 @@ It checks:
 - Pulls latest images from GHCR
 - Runs production stack on a **self-hosted runner**
 
+### 4. Switch (Self-Hosted)
+- Triggered manually (workflow_dispatch)
+- Runs on the self-hosted runner (local WSL instance)
+- Allows switching live traffic between Blue and Green environments with zero downtime
+
 ---
 
 ## 🟦🟩 Blue-Green Deployment
