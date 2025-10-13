@@ -1,0 +1,81 @@
+name: Switch (Self-Hosted)
+
+on:
+  workflow_dispatch:
+    inputs:
+      active_color:
+        description: "Which color should serve port 8081?"
+        required: true
+        default: "green"
+        type: choice
+        options: [blue, green]
+      tag_blue:
+        description: "Backend/Web image tag for BLUE (e.g., latest or sha-xxxxxxx)"
+        required: true
+        default: "latest"
+      tag_green:
+        description: "Backend/Web image tag for GREEN (e.g., latest or sha-xxxxxxx)"
+        required: true
+        default: "latest"
+
+permissions:
+  contents: read
+
+jobs:
+  switch:
+    name: Switch Active Color
+    runs-on: self-hosted
+    environment: prod            # <- uses your Environment (approval + secrets)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Only needed if your GHCR images are private (uses env secrets from prod)
+      - name: Login to GHCR (optional)
+        if: ${{ secrets.GHCR_TOKEN != '' }}
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
+            -u "${{ secrets.GHCR_USER }}" --password-stdin
+
+      - name: Set image tags for both colors
+        run: |
+          echo "TAG_BLUE=${{ github.event.inputs.tag_blue }}"   >> $GITHUB_ENV
+          echo "TAG_GREEN=${{ github.event.inputs.tag_green }}" >> $GITHUB_ENV
+
+      - name: Pick overlay for active color
+        run: |
+          if [ "${{ github.event.inputs.active_color }}" = "green" ]; then
+            echo "OVERLAY=infra/bluegreen/green-active.yml" >> $GITHUB_ENV
+          else
+            echo "OVERLAY=infra/bluegreen/blue-active.yml"  >> $GITHUB_ENV
+          fi
+
+      - name: Start/Update Blue-Green stack
+        env:
+          TAG_BLUE:  ${{ env.TAG_BLUE }}
+          TAG_GREEN: ${{ env.TAG_GREEN }}
+          OVERLAY:   ${{ env.OVERLAY }}
+        run: |
+          docker compose \
+            -f infra/compose.base.yml \
+            -f infra/docker-compose.prod.yml \
+            -f infra/bluegreen/docker-compose.bluegreen.yml \
+            -f "${OVERLAY}" \
+            up -d --force-recreate
+
+      - name: Show who owns 8081
+        run: |
+          echo "Containers mapped to port 8081:"
+          docker ps --filter "publish=8081" --format "table {{.Names}}\t{{.Ports}}"
+
+      - name: Health check (active color via 8081)
+        run: |
+          echo "Testing http://localhost:8081/api/health ..."
+          curl -fsS http://localhost:8081/api/health | tee /tmp/health.txt
+          grep -qi "ok" /tmp/health.txt
+
+      - name: Prometheus hint (optional)
+        run: |
+          echo "Check Prometheus targets at: http://localhost:9090/targets"
+          echo "You should see backend-blue:3000 and backend-green:3000 as UP."
