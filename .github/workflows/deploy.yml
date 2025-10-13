@@ -1,10 +1,20 @@
-name: Deploy (self-hosted)
+name: Blue-Green Switch (Self-Hosted)
 
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Image tag to deploy (e.g., sha-abc1234 or latest)"
+      active_color:
+        description: "Which color should serve port 8081?"
+        required: true
+        default: "green"
+        type: choice
+        options: [blue, green]
+      tag_blue:
+        description: "Image tag for BLUE (e.g., latest or sha-xxxxxxx)"
+        required: true
+        default: "latest"
+      tag_green:
+        description: "Image tag for GREEN (e.g., latest or sha-xxxxxxx)"
         required: true
         default: "latest"
 
@@ -12,31 +22,64 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
-    runs-on: self-hosted           # your WSL runner
-    environment: prod              # uses Environment 'prod' for secrets/approvals
+  switch:
+    name: Switch Active Color
+    runs-on: self-hosted
+    environment: prod        # you already have this env + secrets set
+
+    # Pull secrets into env (NOTE THE SPACES AFTER :)
+    env:
+      GHCR_USER:  ${{ secrets.GHCR_USER }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Login to GHCR (private images)
+      # Optional: only if your GHCR images are private
+      - name: Login to GHCR (optional)
+        if: ${{ env.GHCR_USER != '' && env.GHCR_TOKEN != '' }}
         run: |
-          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
-            -u "${{ secrets.GHCR_USER }}" --password-stdin
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
-      # Bring any old stack down first (keep volumes = keep DB data)
-      - name: Tear down old stack (keep volumes)
+      - name: Set tags for both colors
         run: |
-          cd infra
-          docker compose -f compose.base.yml -f docker-compose.prod.yml down --remove-orphans || true
+          echo "TAG_BLUE=${{ github.event.inputs.tag_blue }}"   >> $GITHUB_ENV
+          echo "TAG_GREEN=${{ github.event.inputs.tag_green }}" >> $GITHUB_ENV
 
-      - name: Pull & run (base + prod compose)
-        env:
-          TAG: ${{ github.event.inputs.tag }}
+      - name: Pick overlay for active color
         run: |
-          cd infra
-          docker compose -f compose.base.yml -f docker-compose.prod.yml pull
-          docker compose -f compose.base.yml -f docker-compose.prod.yml up -d
+          if [ "${{ github.event.inputs.active_color }}" = "green" ]; then
+            echo "OVERLAY=infra/bluegreen/green-active.yml" >> $GITHUB_ENV
+          else
+            echo "OVERLAY=infra/bluegreen/blue-active.yml"  >> $GITHUB_ENV
+          fi
+
+      # Optional “nice to have”: pulls are harmless if images are local
+      - name: Pre-pull images (optional)
+        run: |
+          docker pull ghcr.io/${{ github.repository }}/backend:${TAG_BLUE}  || true
+          docker pull ghcr.io/${{ github.repository }}/web:${TAG_BLUE}      || true
+          docker pull ghcr.io/${{ github.repository }}/backend:${TAG_GREEN} || true
+          docker pull ghcr.io/${{ github.repository }}/web:${TAG_GREEN}     || true
+
+      - name: Start/Update Blue-Green stack
+        run: |
+          docker compose \
+            -f infra/compose.base.yml \
+            -f infra/docker-compose.prod.yml \
+            -f infra/bluegreen/docker-compose.bluegreen.yml \
+            -f "${OVERLAY}" \
+            up -d --force-recreate
+
+      - name: Who owns 8081?
+        run: docker ps --filter "publish=8081" --format "table {{.Names}}\t{{.Ports}}"
 
       - name: Health check
-        run: curl -fsS http://localhost:8081/api/health | grep -i ok
+        run: |
+          curl -fsS http://localhost:8081/api/health | tee /tmp/health.txt
+          grep -qi "ok" /tmp/health.txt || (echo "Health not OK" && exit 1)
+
+      - name: (Info) Prometheus targets
+        run: |
+          echo "Check http://localhost:9090/targets — both backend-blue:3000 and backend-green:3000 should be UP."
