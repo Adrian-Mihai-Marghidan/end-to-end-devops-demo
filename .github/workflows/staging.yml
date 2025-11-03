@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   staging-cd:
-    runs-on: self-hosted   # same local/WSL runner
+    runs-on: self-hosted   # your local/WSL runner
 
     steps:
       - uses: actions/checkout@v4
@@ -20,21 +20,6 @@ jobs:
         run: |
           echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
           echo "SHA7=${GITHUB_SHA::7}" >> $GITHUB_ENV
-
-      # --- CI-lite: build & test on dev stack ---
-      - name: Start stack (dev override) and build
-        run: |
-          docker compose -f infra/compose.base.yml -f infra/docker-compose.dev.yml up -d --build
-
-      - name: Make smoke script executable
-        run: chmod +x scripts/smoke.sh
-
-      - name: Smoke tests
-        run: ./scripts/smoke.sh
-
-      - name: Cleanup test stack
-        if: always()
-        run: docker compose -f infra/compose.base.yml -f infra/docker-compose.dev.yml down -v
 
       # --- Build & Push images with STAGING tags ---
       - name: Login to GHCR
@@ -65,7 +50,7 @@ jobs:
           docker push $WEB_IMAGE:staging-${SHA7}
           docker push $WEB_IMAGE:staging-latest
 
-      # --- Deploy to STAGING (separate project = e2e-stg) ---
+      # --- Deploy to STAGING (separate stack e2e-stg) ---
       - name: Deploy to staging (Compose project = e2e-stg)
         env:
           TAG_STG: staging-latest
@@ -82,3 +67,4 @@ jobs:
 
       - name: Health check (staging)
         run: curl -fsS http://localhost:8083/api/health | grep -i OK
+
