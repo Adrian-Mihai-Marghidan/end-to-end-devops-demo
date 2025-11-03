@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ dev, feature/** ]
+    branches: [ dev, staging, feature/** ]
 
 permissions:
   contents: read
@@ -14,6 +14,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # Clean any previous dev stack (in case of leftover from a failed run)
+      - name: Clean previous dev stack
+        run: |
+          docker compose -f infra/compose.base.yml -f infra/docker-compose.dev.yml down --remove-orphans || true
 
       # Start the stack using the DEV override (bind mounts + local backend build)
       - name: Start stack (dev override) and build
