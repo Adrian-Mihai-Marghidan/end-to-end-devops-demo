@@ -1,6 +1,8 @@
+# infra/compose.base.yml
+
 services:
   backend:
-    container_name: backend
+    # fără container_name -> Docker Compose va crea nume unice de genul: proiect_backend_1
     depends_on:
       db:
         condition: service_started
@@ -12,20 +14,18 @@ services:
       DB_PASSWORD: apppass
       DB_NAME: appdb
     ports:
-      - "3000:3000"   # optional for direct curl
+      - "3000:3000"   # opțional pentru curl direct în backend
 
   web:
-    container_name: web
     depends_on:
       backend:
-        condition: service_started   # <— was service_healthy (no healthcheck in dev)
+        condition: service_started   # în dev (fără healthcheck complex)
     ports:
-      - "8081:80"
+      - "8081:80"     # host:container
     restart: unless-stopped
 
   db:
     image: postgres:16-alpine
-    container_name: db
     environment:
       POSTGRES_USER: appuser
       POSTGRES_PASSWORD: apppass
@@ -36,7 +36,6 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.55.1
-    container_name: prometheus
     command: ["--config.file=/etc/prometheus/prometheus.yml"]
     volumes:
       # DEV default: scrape backend:3000
@@ -48,7 +47,6 @@ services:
 
   grafana:
     image: grafana/grafana:11.2.0
-    container_name: grafana
     ports:
       - "3001:3000"
     volumes:
@@ -65,3 +63,4 @@ volumes:
   pgdata:
   prom_data:
   grafana_data:
+
