@@ -15,7 +15,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Compute lowercase repo name + short SHA
+      # NEW: stop any old stacks from this project (dev/prod/staging)
+      - name: Kill all old demo stacks (dev/prod/staging)
+        run: |
+          cd infra
+
+          # dev stack (dev override)
+          docker compose -f compose.base.yml -f docker-compose.dev.yml \
+            down --remove-orphans || true
+
+          # prod stack (default project)
+          docker compose -f compose.base.yml -f docker-compose.prod.yml \
+            down --remove-orphans || true
+
+          # staging stack (project name e2e-stg)
+          docker compose -p e2e-stg \
+            -f compose.base.yml -f docker-compose.staging.yml \
+            down --remove-orphans || true
+
+      # Compute lowercase repo + short SHA for tags
       - name: Compute vars
         run: |
           echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
@@ -66,5 +84,15 @@ jobs:
             up -d
 
       - name: Health check (staging)
-        run: curl -fsS http://localhost:8083/api/health | grep -i OK
-
+        run: |
+          # small retry loop, just in case NGINX/back-end needs a few seconds
+          for i in {1..6}; do
+            if curl -fsS http://localhost:8083/api/health | grep -qi "ok"; then
+              echo "Staging health OK"
+              exit 0
+            fi
+            echo "Staging not ready yet, retrying..."
+            sleep 5
+          done
+          echo "Staging health check FAILED"
+          exit 1
