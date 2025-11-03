@@ -19,17 +19,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # NEW: stop any old stacks from this project (dev, prod, staging)
+      - name: Kill all old demo stacks (dev/prod/staging)
+        run: |
+          cd infra
+
+          # dev stack
+          docker compose -f compose.base.yml -f docker-compose.dev.yml \
+            down --remove-orphans || true
+
+          # prod stack (default project)
+          docker compose -f compose.base.yml -f docker-compose.prod.yml \
+            down --remove-orphans || true
+
+          # staging stack (project e2e-stg)
+          docker compose -p e2e-stg \
+            -f compose.base.yml -f docker-compose.staging.yml \
+            down --remove-orphans || true
+
       - name: Login to GHCR (private images)
         run: |
           echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
             -u "${{ secrets.GHCR_USER }}" --password-stdin
 
-      # Bring any old stack down first (keep volumes = keep DB data)
-      - name: Tear down old stack (keep volumes)
-        run: |
-          cd infra
-          docker compose -f compose.base.yml -f docker-compose.prod.yml down --remove-orphans || true
-
+      # Pull & run base + prod compose
       - name: Pull & run (base + prod compose)
         env:
           TAG: ${{ github.event.inputs.tag }}
@@ -38,5 +51,16 @@ jobs:
           docker compose -f compose.base.yml -f docker-compose.prod.yml pull
           docker compose -f compose.base.yml -f docker-compose.prod.yml up -d
 
-      - name: Health check
-        run: curl -fsS http://localhost:8081/api/health | grep -i ok
+      - name: Health check (prod)
+        run: |
+          # retry a few times in case NGINX/backend is still starting
+          for i in {1..6}; do
+            if curl -fsS http://localhost:8081/api/health | grep -qi "ok"; then
+              echo "Prod health OK"
+              exit 0
+            fi
+            echo "Prod not ready yet, retrying..."
+            sleep 5
+          done
+          echo "Prod health check FAILED"
+          exit 1

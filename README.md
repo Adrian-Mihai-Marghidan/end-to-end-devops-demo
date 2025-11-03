@@ -100,6 +100,11 @@ It checks:
 - Pulls latest images from GHCR
 - Runs production stack on a **self-hosted runner**
 
+### 4. Switch (Self-Hosted)
+- Triggered manually (workflow_dispatch)
+- Runs on the self-hosted runner (local WSL instance)
+- Allows switching live traffic between Blue and Green environments with zero downtime
+
 ---
 
 ## 🟦🟩 Blue-Green Deployment
@@ -125,11 +130,9 @@ docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml -f inf
 ## 📊 Observability
 
 - **Prometheus** scrapes `/metrics`
++ **Prometheus** scrapes `/metrics` from both `backend-blue` and `backend-green` in Blue/Green mode
 - **Grafana** visualizes metrics
-- Example dashboards:
-  - HTTP request rate
-  - Error counts
-  - DB hit counters
++ **Grafana** visualizes metrics (e.g. HTTP rate, errors, DB counters)
 
 ---
 
@@ -165,3 +168,7 @@ docker compose -f infra/compose.base.yml -f infra/docker-compose.prod.yml -f inf
 
 This project is for **educational/demo purposes only**.
 
+Test CI/CD Flow
+Test 2 
+Test 3
+Test for prod deployment
