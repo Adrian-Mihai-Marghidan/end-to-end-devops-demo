@@ -105,6 +105,9 @@ It checks:
 - Runs on the self-hosted runner (local WSL instance)
 - Allows switching live traffic between Blue and Green environments with zero downtime
 
+### 5. Staging (Self-hosted)
+- Triggered on push to staging
+- Runs staging slack on the self-hosted runner (local WSL instance)
 ---
 
 ## 🟦🟩 Blue-Green Deployment
