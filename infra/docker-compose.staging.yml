@@ -1,28 +1,27 @@
 # infra/docker-compose.staging.yml
+
 services:
   web:
-    image: ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/web:${TAG_STG:-staging-latest}
+    image: ghcr.io/${REPO_LC}/web:${TAG_STG:-staging-latest}
     ports:
-      - "8083:80"     # web (staging)
+      - "8083:80"       # web (staging)
     restart: unless-stopped
 
   backend:
-    image: ghcr.io/adrian-mihai-marghidan/end-to-end-devops-demo/backend:${TAG_STG:-staging-latest}
-    # în staging nu mai e nevoie de build local; folosești imaginea din registry
+    image: ghcr.io/${REPO_LC}/backend:${TAG_STG:-staging-latest}
     ports:
-      - "3002:3000"   # opțional, doar dacă vrei să accesezi direct backend-ul
+      - "3002:3000"     # optional, direct backend access (staging)
     restart: unless-stopped
 
   prometheus:
-    # Folosim același config ca în dev (scrape backend:3000), dar pe alte porturi
     volumes:
       - ./prometheus/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "9091:9090"   # Prometheus (staging)
+      - "9091:9090"     # Prometheus (staging)
 
   grafana:
     ports:
-      - "3003:3000"   # Grafana (staging) – am schimbat din 3002 ca să nu se bată cu backend
+      - "3003:3000"     # Grafana (staging)
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
