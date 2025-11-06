@@ -61,7 +61,7 @@
         const text = await resp.text();
 
         // Extract "app_requests_total <number>" from Prometheus exposition text.
-        const m = text.match(/^\s*app_requests_total\s+(\d+)\s*$/m);
+        const m = text.match(/^\s*http_requests_total\s+(\d+)\s*$/m);
         if (m) {
           out.textContent = `app_requests_total = ${m[1]}`;
         } else {
