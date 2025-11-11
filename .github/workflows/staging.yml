@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # NEW: stop any old stacks from this project (dev/prod/staging)
+      # Stop any old stacks from this project (dev/prod/staging)
       - name: Kill all old demo stacks (dev/prod/staging)
         run: |
           cd infra
