@@ -1,12 +1,12 @@
-name: Blue-Green Switch (Self-Hosted)
+
+name: Switch Blue/Green with Auto-Rollback
 
 on:
   workflow_dispatch:
     inputs:
-      active_color:
-        description: "Which color should serve port 8081?"
+      color:
+        description: "Which color should become active (serve port 8081)?"
         required: true
-        default: "green"
         type: choice
         options: [blue, green]
       tag_blue:
@@ -20,97 +20,112 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   switch:
-    name: Switch Active Color
     runs-on: self-hosted
-    # remove the next line if you don't want env approvals on this workflow
-    environment: prod
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      # 1️⃣ Checkout repository
+      - uses: actions/checkout@v4
 
-      # Optional login — guarded by env so missing secrets don't break the run
-      - name: Login to GHCR (optional)
-        env:
-          GHCR_USER:  ${{ secrets.GHCR_USER }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      # 2️⃣ Compute environment variables based on chosen color
+      - name: Set environment variables
         run: |
-          if [ -n "$GHCR_USER" ] && [ -n "$GHCR_TOKEN" ]; then
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-          else
-            echo "Skipping GHCR login (no secrets provided)."
-          fi
-
-      - name: Set tags and overlay
-        run: |
-          echo "TAG_BLUE=${{ inputs.tag_blue }}"   >> $GITHUB_ENV
-          echo "TAG_GREEN=${{ inputs.tag_green }}" >> $GITHUB_ENV
-          if [ "${{ inputs.active_color }}" = "green" ]; then
+          if [ "${{ github.event.inputs.color }}" = "green" ]; then
             echo "OVERLAY=infra/bluegreen/green-active.yml" >> $GITHUB_ENV
-            echo "ACTIVE=web-green"   >> $GITHUB_ENV
-            echo "INACTIVE=web-blue"  >> $GITHUB_ENV
+            echo "ACTIVE=web-green" >> $GITHUB_ENV
+            echo "INACTIVE=web-blue" >> $GITHUB_ENV
+            echo "PREVIOUS_COLOR=blue" >> $GITHUB_ENV
           else
-            echo "OVERLAY=infra/bluegreen/blue-active.yml"  >> $GITHUB_ENV
-            echo "ACTIVE=web-blue"    >> $GITHUB_ENV
+            echo "OVERLAY=infra/bluegreen/blue-active.yml" >> $GITHUB_ENV
+            echo "ACTIVE=web-blue" >> $GITHUB_ENV
             echo "INACTIVE=web-green" >> $GITHUB_ENV
+            echo "PREVIOUS_COLOR=green" >> $GITHUB_ENV
           fi
-          # Lowercased owner/repo for GHCR pulls
-          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
-      # If a previous "single-color" stack exists, free port 8081
-      - name: Preflight — stop plain prod stack (ignore if none)
+          echo "TAG_BLUE=${{ github.event.inputs.tag_blue }}" >> $GITHUB_ENV
+          echo "TAG_GREEN=${{ github.event.inputs.tag_green }}" >> $GITHUB_ENV
+
+      # 3️⃣ Build & update the inactive color
+      - name: Deploy inactive color
         run: |
+          echo "🧱 Deploying inactive color: ${INACTIVE}"
           docker compose \
             -f infra/compose.base.yml \
             -f infra/docker-compose.prod.yml \
-            down --remove-orphans || true
+            -f infra/bluegreen/docker-compose.bluegreen.yml \
+            up -d --build "${INACTIVE}"
 
-      # Optional: pre-pull images quietly (uses lowercased repo)
-      - name: Pre-pull images (optional)
-        env:
-          TAG_BLUE:  ${{ env.TAG_BLUE }}
-          TAG_GREEN: ${{ env.TAG_GREEN }}
-          REPO_LC:   ${{ env.REPO_LC }}
+      # 4️⃣ Health check inactive color internally before switch
+      - name: Health check inactive color
         run: |
-          docker pull ghcr.io/${REPO_LC}/backend:${TAG_BLUE}  || true
-          docker pull ghcr.io/${REPO_LC}/web:${TAG_BLUE}      || true
-          docker pull ghcr.io/${REPO_LC}/backend:${TAG_GREEN} || true
-          docker pull ghcr.io/${REPO_LC}/web:${TAG_GREEN}     || true
+          echo "🔍 Checking ${INACTIVE} health before switching traffic"
+          for i in {1..10}; do
+            if docker compose \
+              -f infra/compose.base.yml \
+              -f infra/docker-compose.prod.yml \
+              -f infra/bluegreen/docker-compose.bluegreen.yml \
+              exec "${INACTIVE}" \
+              curl -fsS http://localhost/api/health | grep -qi "ok"; then
+              echo "✅ ${INACTIVE} is healthy (pre-switch)"
+              exit 0
+            fi
+            echo "Waiting for ${INACTIVE} to become ready... ($i/10)"
+            sleep 5
+          done
+          echo "❌ ${INACTIVE} failed health check before switch"
+          exit 1
 
-      # Phase 1: recreate the INACTIVE web first (overlay gives it ports: [])
-      - name: Phase 1 — drop 8081 from inactive side
-        env:
-          OVERLAY:  ${{ env.OVERLAY }}
-          INACTIVE: ${{ env.INACTIVE }}
+      # 5️⃣ Switch overlay (make new color live)
+      - name: Switch overlay to new color
+        if: success()
         run: |
+          echo "🚦 Switching overlay to ${ACTIVE}..."
           docker compose \
             -f infra/compose.base.yml \
             -f infra/docker-compose.prod.yml \
             -f infra/bluegreen/docker-compose.bluegreen.yml \
             -f "${OVERLAY}" \
-            up -d --force-recreate "${INACTIVE}"
+            up -d --force-recreate web-blue web-green
 
-      # Phase 2: start/update the ACTIVE side (claims 8081)
-      - name: Phase 2 — start/update active side
-        env:
-          OVERLAY: ${{ env.OVERLAY }}
-          ACTIVE:  ${{ env.ACTIVE }}
+      # 6️⃣ Verify new color live on port 8081
+      - name: Verify new color live on 8081
+        id: verify
+        continue-on-error: true
         run: |
+          echo "🌐 Verifying new live color on http://localhost:8081/api/health"
+          for i in {1..6}; do
+            if curl -fsS http://localhost:8081/api/health | grep -qi "ok"; then
+              echo "✅ New color healthy on 8081"
+              exit 0
+            fi
+            echo "Waiting for new color to respond... ($i/6)"
+            sleep 5
+          done
+          echo "❌ New color failed health check on 8081"
+          exit 1
+
+      # 7️⃣ Rollback automatically if health failed
+      - name: Rollback to previous color
+        if: steps.verify.outcome == 'failure'
+        run: |
+          echo "🔁 Rolling back to ${PREVIOUS_COLOR}"
           docker compose \
             -f infra/compose.base.yml \
             -f infra/docker-compose.prod.yml \
             -f infra/bluegreen/docker-compose.bluegreen.yml \
-            -f "${OVERLAY}" \
-            up -d --force-recreate "${ACTIVE}" db prometheus grafana backend-blue backend-green
+            -f infra/bluegreen/${PREVIOUS_COLOR}-active.yml \
+            up -d --force-recreate web-blue web-green
 
-      - name: Who owns 8081?
-        run: docker ps --filter "publish=8081" --format "table {{.Names}}\t{{.Ports}}"
-
-      - name: Health check
-        run: curl -fsS http://localhost:8081/api/health | grep -i ok || (echo "Health failed" && exit 1)
-
-      - name: (Info) Prometheus targets
-        run: echo "Check http://localhost:9090/targets → backend-blue:3000 and backend-green:3000 should be UP."
+          echo "🩺 Checking rollback health..."
+          for i in {1..6}; do
+            if curl -fsS http://localhost:8081/api/health | grep -qi "ok"; then
+              echo "✅ Rollback successful — previous color restored"
+              exit 0
+            fi
+            echo "Waiting for rollback service... ($i/6)"
+            sleep 5
+          done
+          echo "❌ Rollback service failed"
+          exit 1
