@@ -1,4 +1,3 @@
-
 name: Switch Blue/Green with Auto-Rollback
 
 on:
@@ -44,7 +43,7 @@ jobs:
             echo "PREVIOUS_COLOR=green" >> $GITHUB_ENV
           fi
 
-          echo "TAG_BLUE=${{ github.event.inputs.tag_blue }}" >> $GITHUB_ENV
+          echo "TAG_BLUE=${{ github.event.inputs.tag_blue }}"   >> $GITHUB_ENV
           echo "TAG_GREEN=${{ github.event.inputs.tag_green }}" >> $GITHUB_ENV
 
       # 3️⃣ Build & update the inactive color
@@ -76,6 +75,20 @@ jobs:
           done
           echo "❌ ${INACTIVE} failed health check before switch"
           exit 1
+
+      # 🔌 NEW: Free port 8081 before applying new overlay
+      - name: Free port 8081 (stop old web containers)
+        if: success()
+        run: |
+          echo "🔌 Freeing port 8081 before switching overlay..."
+          IDS=$(docker ps --filter "publish=8081" --format "{{.ID}}")
+          if [ -n "$IDS" ]; then
+            echo "Found containers using 8081: $IDS"
+            docker stop $IDS || true
+            docker rm $IDS || true
+          else
+            echo "No containers currently using port 8081."
+          fi
 
       # 5️⃣ Switch overlay (make new color live)
       - name: Switch overlay to new color
