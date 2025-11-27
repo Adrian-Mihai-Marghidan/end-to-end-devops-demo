@@ -16,6 +16,12 @@ on:
         description: "Image tag for GREEN (e.g., latest or sha-xxxxxxx)"
         required: true
         default: "latest"
+      force_failure:
+        description: "FOR DEMO: force health-check failure to show rollback"
+        required: true
+        type: choice
+        options: [false, true]
+        default: "false"
 
 permissions:
   contents: read
@@ -76,7 +82,7 @@ jobs:
           echo "❌ ${INACTIVE} failed health check before switch"
           exit 1
 
-      # 🔌 NEW: Free port 8081 before applying new overlay
+      # 🔌 Free port 8081 before applying new overlay
       - name: Free port 8081 (stop old web containers)
         if: success()
         run: |
@@ -102,11 +108,17 @@ jobs:
             -f "${OVERLAY}" \
             up -d --force-recreate web-blue web-green
 
-      # 6️⃣ Verify new color live on port 8081
+      # 6️⃣ Verify new color live on port 8081 (with demo force-failure)
       - name: Verify new color live on 8081
         id: verify
         continue-on-error: true
         run: |
+          # DEMO FLAG: force failure to trigger rollback
+          if [ "${{ github.event.inputs.force_failure }}" = "true" ]; then
+            echo "❌ DEMO: Forcing health check failure so we can show automatic rollback"
+            exit 1
+          fi
+
           echo "🌐 Verifying new live color on http://localhost:8081/api/health"
           for i in {1..6}; do
             if curl -fsS http://localhost:8081/api/health | grep -qi "ok"; then
