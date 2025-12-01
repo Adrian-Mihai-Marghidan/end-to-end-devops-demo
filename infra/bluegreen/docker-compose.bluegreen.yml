@@ -3,14 +3,17 @@
 #   - infra/docker-compose.prod.yml (prod-style web image, no bind mounts)
 #
 # This file:
-#  - disables the single 'web' and 'backend' so they don't clash
-#  - adds BLUE and GREEN copies of web+backend
-#  - isolates each color on its own network so 'web' can proxy to 'backend'
-#    via the SAME nginx config (proxy_pass http://backend:3000)
-#  - NOTE: no host ports on web-* here; active port is set by
-#          infra/bluegreen/blue-active.yml or green-active.yml
+#  - disables the singleton 'web' and 'backend' services
+#  - creates BLUE and GREEN copies for web + backend
+#  - ensures each color resides in its own isolated network
+#  - ensures BOTH backends use alias "backend" so that NGINX
+#    can always proxy to http://backend:3000 regardless of color
+#  - Prometheus scrapes BOTH backends in blue/green mode
 
 services:
+  # =======================
+  # PROMETHEUS
+  # =======================
   prometheus:
     image: prom/prometheus:v2.55.1
     container_name: prometheus
@@ -25,16 +28,20 @@ services:
         condition: service_started
       backend-green:
         condition: service_started
+    networks:
+      - default
+      - net-blue
+      - net-green
     restart: unless-stopped
 
-  # Disable singleton services from base/prod in blue/green mode
+  # Disable singleton backend/web containers from base/prod
   backend:
     profiles: ["_disabled"]
   web:
     profiles: ["_disabled"]
 
   # =======================
-  # BLUE (current live)
+  # BLUE
   # =======================
   backend-blue:
     container_name: backend-blue
@@ -45,15 +52,17 @@ services:
       DB_USER: appuser
       DB_PASSWORD: apppass
       DB_NAME: appdb
+      NODE_ENV: production
     depends_on:
       db:
         condition: service_started
-    networks:
-      net-blue:
-        aliases: [backend]
-      default: {}
     expose:
       - "3000"
+    networks:
+      net-blue:
+        aliases:
+          - backend    # NGINX will always use http://backend:3000
+      default:
     restart: unless-stopped
 
   web-blue:
@@ -63,13 +72,13 @@ services:
       backend-blue:
         condition: service_started
     networks:
-      net-blue: {}
-      default: {}
-    # no ports here — set by blue-active.yml or green-active.yml
+      - net-blue
+      - default
+    # port 8081 is added by blue-active.yml / green-active.yml
     restart: unless-stopped
 
   # =======================
-  # GREEN (candidate)
+  # GREEN
   # =======================
   backend-green:
     container_name: backend-green
@@ -80,15 +89,17 @@ services:
       DB_USER: appuser
       DB_PASSWORD: apppass
       DB_NAME: appdb
+      NODE_ENV: production
     depends_on:
       db:
         condition: service_started
-    networks:
-      net-green:
-        aliases: [backend]
-      default: {}
     expose:
       - "3000"
+    networks:
+      net-green:
+        aliases:
+          - backend    # same alias for green side
+      default:
     restart: unless-stopped
 
   web-green:
@@ -98,12 +109,11 @@ services:
       backend-green:
         condition: service_started
     networks:
-      net-green: {}
-      default: {}
-    # no ports here — set by blue-active.yml or green-active.yml
+      - net-green
+      - default
     restart: unless-stopped
 
 networks:
   net-blue:
   net-green:
-# 'default' network exists from base compose; used to reach db/prom/grafana
+  # default network comes from base compose
