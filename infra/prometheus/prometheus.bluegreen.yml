@@ -1,9 +1,11 @@
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+  scrape_interval: 5s
+  evaluation_interval: 5s
 
 scrape_configs:
-  - job_name: "backend"
+  - job_name: "bluegreen-backends"
     metrics_path: /metrics
     static_configs:
-      - targets: ["backend-blue:3000", "backend-green:3000"]
+      - targets:
+          - "backend-blue:3000"
+          - "backend-green:3000"
